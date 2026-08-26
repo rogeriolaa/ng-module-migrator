@@ -1,0 +1,31 @@
+{
+  "name": "ng-module-migrator",
+  "version": "0.1.0",
+  "description": "Analyze NgModule-based Angular apps and draft the standalone migration with a 100% local LLM.",
+  "type": "module",
+  "main": "index.js",
+  "bin": { "ng-module-migrator": "./index.js" },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "angular",
+    "standalone",
+    "migration",
+    "ngmodule",
+    "cli",
+    "local-llm",
+    "onnx",
+    "qwen"
+  ],
+  "license": "MIT",
+  "author": "Rogerio Amorim",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rogeriolaa/ng-module-migrator.git"
+  },
+  "dependencies": {
+    "@qwen-lab/llm": "file:../qwen-lab-shared"
+  }
+}

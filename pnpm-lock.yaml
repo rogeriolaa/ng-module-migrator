@@ -1,0 +1,22 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@qwen-lab/llm':
+        specifier: file:../qwen-lab-shared
+        version: qwen-lab-shared@file:../qwen-lab-shared
+
+packages:
+
+  qwen-lab-shared@file:../qwen-lab-shared:
+    resolution: {directory: ../qwen-lab-shared, type: directory}
+
+snapshots:
+
+  qwen-lab-shared@file:../qwen-lab-shared: {}

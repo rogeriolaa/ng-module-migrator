@@ -1,0 +1,142 @@
+#!/usr/bin/env node
+/**
+ * ng-module-migrator — analyze NgModule-based Angular apps and draft the
+ * standalone migration with a 100% local LLM (Qwen via @qwen-lab/llm).
+ */
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join, extname, resolve, dirname, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { analyzeNgModule, findStandaloneCandidates, buildMigrationPrompt } from "./src/migrate.js";
+
+function usage() {
+  console.log(`Usage: ng-module-migrator --path <dir|file> [--dry-run] [--write] [--lang en|pt]
+
+Options:
+  --path     Path to a .ts file or a directory to walk (required)
+  --dry-run  Print report only; do not write files (default)
+  --write    Apply generated changes next to each module file
+  --lang     Explanation language: en | pt (default: en)`);
+}
+
+function parseArgs(argv) {
+  const opts = { path: null, dryRun: true, write: false, lang: "en" };
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case "--path": opts.path = argv[++i]; break;
+      case "--dry-run": opts.dryRun = true; break;
+      case "--write": opts.write = true; opts.dryRun = false; break;
+      case "--lang": opts.lang = argv[++i] === "pt" ? "pt" : "en"; break;
+      case "-h": case "--help": usage(); process.exit(0);
+      default:
+        if (!argv[i].startsWith("--") && !opts.path) opts.path = argv[i];
+        else { console.error("Unknown option:", argv[i]); usage(); process.exit(1); }
+    }
+  }
+  if (!opts.path) { console.error("--path is required"); usage(); process.exit(1); }
+  return opts;
+}
+
+function walkTsFiles(target) {
+  const out = [];
+  const st = statSync(target);
+  if (st.isFile()) return target.endsWith(".ts") ? [resolve(target)] : [];
+  for (const entry of readdirSync(target)) {
+    const p = join(target, entry);
+    if (entry === "node_modules" || entry.startsWith(".")) continue;
+    if (statSync(p).isDirectory()) out.push(...walkTsFiles(p));
+    else if (extname(p) === ".ts" && !p.endsWith(".spec.ts")) out.push(resolve(p));
+  }
+  return out;
+}
+
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
+
+  let files;
+  try {
+    files = walkTsFiles(resolve(opts.path));
+  } catch (e) {
+    console.error(`Cannot access ${opts.path}: ${e.message}`);
+    process.exit(1);
+  }
+
+  // Analyze every .ts file for modules
+  const found = []; // { file, code, moduleInfo }
+  for (const file of files) {
+    try {
+      const code = readFileSync(file, "utf8");
+      for (const mod of analyzeNgModule(code)) found.push({ file, code, mod });
+    } catch { /* skip unreadable */ }
+  }
+
+  if (!found.length) {
+    console.log(opts.lang === "pt"
+      ? "Nenhum @NgModule encontrado no caminho informado."
+      : "No @NgModule found in the given path.");
+    return;
+  }
+
+  const t = opts.lang === "pt"
+    ? {
+        header: "Relatório de migração para standalone",
+        mods: "Módulos encontrados",
+        comps: "Componentes declarados",
+        changes: "Alterações estimadas",
+        boot: "módulo bootstrap → novo main.ts com bootstrapApplication()",
+        perMod: "novo arquivo por componente standalone + remoção do NgModule",
+        run: "Executando LLM local para módulo",
+        wrote: "Escrito:",
+        dry: "(dry-run: nada foi escrito)",
+      }
+    : {
+        header: "Standalone migration report",
+        mods: "Modules found",
+        comps: "Declared components",
+        changes: "Estimated changes",
+        boot: "bootstrap module → new main.ts with bootstrapApplication()",
+        perMod: "one migrated file per component + remove the NgModule",
+        run: "Running local LLM for module",
+        wrote: "Wrote:",
+        dry: "(dry-run: nothing was written)",
+      };
+
+  console.log(`\n=== ${t.header} ===\n`);
+  console.log(`${t.mods}: ${found.length}`);
+  const totalComps = found.reduce((n, f) => n + f.mod.declarations.length, 0);
+  console.log(`${t.comps}: ${totalComps}`);
+  console.log(`${t.changes}: ${totalComps + found.filter((f) => f.mod.bootstrap.length).length}`);
+
+  for (const f of found) {
+    const isBoot = f.mod.bootstrap.length > 0;
+    console.log(`\n- ${relative(process.cwd(), f.file)} → ${f.mod.name}`);
+    console.log(`  declarations: ${f.mod.declarations.join(", ") || "-"}`);
+    if (isBoot) console.log(`  * ${t.boot}`);
+    else console.log(`  * ${t.perMod}`);
+
+    const candidates = findStandaloneCandidates(
+      f.mod.declarations,
+      Object.fromEntries(f.mod.declarations.map((d) => [d, f.code])),
+    );
+
+    console.log(`\n${t.run} ${f.mod.name}...`);
+    const { loadGenerator, generate } = await import("@qwen-lab/llm");
+    const generator = await loadGenerator(console.error);
+    const messages = buildMigrationPrompt(f.mod);
+    const answer = await generate(generator, messages, { maxNewTokens: 700 });
+
+    if (opts.write) {
+      const outPath = join(dirname(f.file), `${f.mod.name.toLowerCase()}-standalone.migrated.ts`);
+      writeFileSync(outPath, `// Generated by ng-module-migrator\n${answer}\n`);
+      console.log(`${t.wrote} ${outPath}`);
+    } else {
+      console.log("\n--- proposed output ---\n");
+      console.log(answer);
+      console.log(`\n${t.dry}`);
+    }
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
