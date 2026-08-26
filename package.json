@@ -4,7 +4,9 @@
   "description": "Analyze NgModule-based Angular apps and draft the standalone migration with a 100% local LLM.",
   "type": "module",
   "main": "index.js",
-  "bin": { "ng-module-migrator": "./index.js" },
+  "bin": {
+    "ng-module-migrator": "./index.js"
+  },
   "scripts": {
     "start": "node index.js",
     "test": "node --test"
@@ -26,6 +28,7 @@
     "url": "https://github.com/rogeriolaa/ng-module-migrator.git"
   },
   "dependencies": {
-    "@qwen-lab/llm": "file:../qwen-lab-shared"
+    "@qwen-lab/llm": "file:../qwen-lab-shared",
+    "@huggingface/transformers": "^3.8.0"
   }
 }
